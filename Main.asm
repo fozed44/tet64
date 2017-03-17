@@ -20,20 +20,20 @@ DEBUG CURRT_PIECE_PTR AUTO ON
 
 
 
-;* = $0801
+* = $0801
 
-;        BYTE 12,8,0,0,158
-;        BYTE 48+4
-;        BYTE 48+0
-;        BYTE 48+9
-;        BYTE 48+6
+        BYTE 12,8,0,0,158
+        BYTE 48+4
+        BYTE 48+0
+        BYTE 48+9
+        BYTE 48+6
 
 
 
 FIELD_START_X = 15
 FIELD_START_Y = 03
-FIELD_END_X   = 22
-FIELD_END_Y   = 20
+FIELD_END_X   = 23
+FIELD_END_Y   = 23
 
 
 
@@ -75,7 +75,8 @@ INIT
         LDA #<PIECE_DATA
         STA CURRT_PIECE_PTR
         LDA #>PIECE_DATA
-        STA 1+CURRT_PIECE_PTR
+        STA 1+CURRT_PIECE_PTR        
+
         LDA #$01
         STA COLOR
         LDA #6
@@ -87,7 +88,7 @@ INIT
         JSR FLIP_SCREEN_BUFFERS
         JSR JOY_TEST
         JSR CLIP_PIECE_LOCATION
-        JSR DRAW_CURRENT_PIECE
+        JSR RUN_PIECE_STEP
         LDA #0
         STA $D020
         JMP @LOOP
@@ -263,13 +264,6 @@ JOY_TEST
 ; CURRENT_LOCATION + PIECE_WIDTH < RIGHT SIDE OF FIELD.
 ; CURRENT_LOCATION + PIECE_HEIGHT < BOTTOM SIDE OF FIELD.
 
-; ***************************************************
-; * NOTE: For some reason the fourth and fith bytes *
-;         using the with and height didn't work and *
-;         were 'hacked' until they worked. They are *
-;         now simply 'magic' numbers that make this *
-;         routine work.                             *
-;****************************************************
 
 ; CURRENT_PIECE_PTR points to the PIECE_DATA representing the current piece. 
 ; This data defines the locations of the other 3 piece parts relative to 
@@ -326,8 +320,8 @@ CLIP_PIECE_LOCATION
 SAVE_PIECE_LOCATION
 
         LDA PREVIOUS1_PIECE_LOCATION_X
-        STA PREVIOUS2_PIECE_LOCATION_Y
-        LDA PREVIOUS1_PIECE_LOCATION_X
+        STA PREVIOUS2_PIECE_LOCATION_X
+        LDA PREVIOUS1_PIECE_LOCATION_Y
         STA PREVIOUS2_PIECE_LOCATION_Y
 
         LDA CURRENT_PIECE_LOCATION_X
@@ -344,24 +338,59 @@ SAVE_PIECE_LOCATION
 
         RTS
 
-
-
 ;-----------------------------------------------------------------------
-;                                                    Draw current piece
+;                                                            Draw piece
 ;-----------------------------------------------------------------------
+
+RUN_PIECE_STEP
+
+        LDA #<PIECE_DATA
+        STA GEN_PIECE_PTR
+        LDA #>PIECE_DATA
+        STA 1+GEN_PIECE_PTR
+
+        LDA #<CURR_COLOR
+        STA COLOR_DATA_PTR
+        LDA #>CURR_COLOR
+        STA 1+COLOR_DATA_PTR
+
+        LDX PREVIOUS2_PIECE_LOCATION_X
+        LDY PREVIOUS2_PIECE_LOCATION_Y
+        JSR RESTORE_PIECE_COLOR
+        
+        LDA CURRENT_PIECE_LOCATION_X
+        STA TEMPX
+        LDA CURRENT_PIECE_LOCATION_Y
+        STA TEMPY
+        JSR STORE_PIECE_COLOR
+
+        LDA #02
+        LDX CURRENT_PIECE_LOCATION_X
+        LDY CURRENT_PIECE_LOCATION_Y
+        JSR DRAW_PIECE
+        JSR SAVE_PIECE_LOCATION
+
+        
+        
+        RTS
+;-----------------------------------------------------------------------
+;                                                            Draw piece
+;-----------------------------------------------------------------------
+; A = Character code used to draw the piece
+; X = X location of the piece
+; Y = Y location of the piece
+
+; GEN_PIECE_PTR = pointer the the piece data used to draw the piece.
 ; COLOR is used to color the peice
 
-DRAW_CURRENT_PIECE
+DRAW_PIECE
 
-        
-        LDA CURRT_PIECE_PTR
-        STA POINTER1_LO
-        LDA 1+CURRT_PIECE_PTR
-        STA POINTER1_HI         ; This block is to store a pointer to the
-                                ; piece data for the current piece
-        
-        
-        LDA CURRENT_PIECE_LOCATION_Y ; <--
+        STA CHARACTER_CODE              ; Store the character code used to
+                                        ; draw the piece.
+
+        STX TEMPX                       ; Save the x piece location
+
+        TYA                          ; <-- xfer the y location to A
         STA FAC1                     ;   |
         LDA #40                      ;   |
         STA FAC2                     ;   |
@@ -393,44 +422,42 @@ DRAW_CURRENT_PIECE
         ADC OFFSET_HI                   ; Add the temp offset to the coller
         STA POINTER3_HI                 ; buffer, store in pointer3
 
-        LDA CURRENT_PIECE_LOCATION_X 
+        LDA TEMPX 
         TAY                          
-        LDA #$02                     
+        LDA CHARACTER_CODE                    
         STA (POINTER2_LO),Y
         LDA COLOR
         STA (POINTER3_LO),Y
 
         LDY #$00
-        LDA (POINTER1_LO),Y
-        ADC CURRENT_PIECE_LOCATION_X
+        LDA (GEN_PIECE_PTR),Y
+        ADC TEMPX
         TAY
-        LDA #$02
+        LDA CHARACTER_CODE
         STA (POINTER2_LO),Y
         LDA COLOR
         STA (POINTER3_LO),Y
 
         LDY #$01
-        LDA (POINTER1_LO),Y
-        ADC CURRENT_PIECE_LOCATION_X
+        LDA (GEN_PIECE_PTR),Y
+        ADC TEMPX
         TAY
-        LDA #$02
+        LDA CHARACTER_CODE
         STA (POINTER2_LO),Y
         LDA COLOR
         STA (POINTER3_LO),Y
 
         LDY #$02
-        LDA (POINTER1_LO),Y
-        ADC CURRENT_PIECE_LOCATION_X
+        LDA (GEN_PIECE_PTR),Y
+        ADC TEMPX
         TAY
-        LDA #$02
+        LDA CHARACTER_CODE
         STA (POINTER2_LO),Y
         LDA COLOR
         STA (POINTER3_LO),Y
 
 
         RTS
-
-
 
 ;-----------------------------------------------------------------------
 ;                                                     Store peice color
@@ -444,6 +471,8 @@ DRAW_CURRENT_PIECE
 ; TEMPX - X location of the piece
 ; TEMPY - Y location of the piece
 
+STORE_PIECE_COLOR
+
 ; Multiply y location of the piece by the screen width (40)
         LDA TEMPY
         STA FAC1
@@ -452,8 +481,8 @@ DRAW_CURRENT_PIECE
         JSR MUL8        ; x -> Offset lo
         
 ; Store the y location offset in POINTER1
-        STX POINTER1_LO       ; lo byte wont change when adding $D800
-        TXA
+        clc
+        STX POINTER1_LO       ; lo byte wont change when adding $D800        TXA
         ADC #>COLOR_MEMORY
         STA POINTER1_HI       ; OFFSET_HI -> Y Offset in screen memory
         
@@ -490,9 +519,80 @@ DRAW_CURRENT_PIECE
         LDY #$03             
         STA (COLOR_DATA_PTR),Y  ; Store it in pos3 of color data
         
-        rts
+        RTS
         
+;-----------------------------------------------------------------------
+;                                                   Restore peice color
+;-----------------------------------------------------------------------
+; Restores the color data behind a piece location that was collected
+; using the STORE_PIECE_COLOR routine
 
+; GEN_PIECE_PTR - points to the peice data structure used to replace the
+;               - color data.
+; COLOR_DATA_PTR - points to a color data struction location that was 
+;                - populated with STORE_PIECE_COLOR
+; X - X location of the piece
+; Y - Y location of the piece
+
+RESTORE_PIECE_COLOR
+
+        STX TEMPX       ; Save the x location
+
+; Multiply y location of the piece by the screen width (40)
+        STY FAC1
+        LDA #40
+        STA FAC2        ; A -> Offset hi
+        JSR MUL8        ; x -> Offset lo
+        
+; Store the y location offset in POINTER1
+        clc
+        STX POINTER1_LO       ; lo byte wont change when adding $D800
+        ADC #>COLOR_MEMORY
+        STA POINTER1_HI       ; OFFSET_HI -> Y Offset in screen memory
+        
+; Replace the color behind the first piece part (pointer1 + x )
+        LDY #$00
+        LDA (COLOR_DATA_PTR),Y   ; Get the color in pos0 of the color data
+        LDY TEMPX
+        STA (POINTER1_LO),Y      ; set the color
+
+; Replace the color behind the second piece part 
+; POINTER1_LO + GEN_PIECE_PTR[0] + X = COLOR_DATA_PTR[1]
+        LDY #$01               
+        STA (COLOR_DATA_PTR),Y  ; Get the color in pos1 of the color data
+        TAX
+        LDY #$00
+        LDA (GEN_PIECE_PTR),Y   ; get GEN_PIECE_PR[0]
+        ADC TEMPX               ; add X
+        TAY                     ; Set as index
+        TXA
+        STA (POINTER1_LO),Y     ; Set the color
+
+; Replace the color behind the third piece part 
+; POINTER1_LO + GEN_PIECE_PTR[1] + X = COLOR_DATA_PTR[2]
+        LDY #$02
+        LDA (COLOR_DATA_PTR),Y  ; get pos2 of color data
+        TAX
+        LDY #$01
+        LDA (GEN_PIECE_PTR),Y   ; get GEN_PIECE_PR[1]
+        ADC TEMPX               ; add X
+        TAY                     ; Set as index
+        TXA
+        STA (POINTER1_LO),Y     ; Set color
+
+; Replace the color behind the second piece part 
+; POINTER1_LO + GEN_PIECE_PTR[2] + X = COLOR_DATA_PTR[3]
+        LDY #$03             
+        LDA (COLOR_DATA_PTR),Y  ; Get pos3 of color data
+        TAX
+        LDY #$02
+        LDA (GEN_PIECE_PTR),Y   ; get GEN_PIECE_PR[0]
+        ADC TEMPX               ; add X
+        TAY                     ; Set as index
+        TXA
+        STA (POINTER1_LO),Y     ; Set color
+        
+        RTS
 
 ;***********************************************************************
 ;                                                        CHARACTER DATA
@@ -540,13 +640,10 @@ PREVIOUS2_PIECE_LOCATION_Y
 ; the first brick is implied so the first byte in PIECE_DATA is the offset
 ; (in screen space) from the first brick.
 
-; bytes 4 and 5 are 'magic numbers' that are used in the clipping algorythm
-; to keep the pieces within the field
-
 ALIGN
 PIECE_DATA
-            ;/O1/ /02/ /03/  |MW|  |MH|
-        BYTE $01, $02, $03,  $02,  $FD
+            ;/O1/ /02/ /03/ |M-1| |H-1|
+        BYTE $01, $02, $03,  $03,  $00
         BYTE $01, $28, $29,  $01,  $01
         BYTE $01, $02, $24,  $02,  $01
         BYTE $01, $02, $30,  $02,  $01
@@ -562,6 +659,10 @@ PREV2_COLOR
 
 ; One byte of color data used to pass a color between routines
 COLOR
+        BYTE $00
+
+; Used to pass character codes to sub routines.
+CHARACTER_CODE
         BYTE $00
 
 TEMP_LO
